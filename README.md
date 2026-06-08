@@ -38,21 +38,18 @@ This project is a cloud security detection and troubleshooting design for AWS Ac
 
 ```text
 
+
+with this:
+
+````markdown
+```text
 AWS API Call
-
-&#x20;  ↓
-
+   ↓
 CloudTrail Event
-
-&#x20;  ↓
-
+   ↓
 EventBridge Rule
-
-&#x20;  ↓
-
+   ↓
 Lambda Processor
-
-&#x20;  ↓
-
+   ↓
 SNS Alert + DynamoDB Metadata + CloudWatch Logs
 
