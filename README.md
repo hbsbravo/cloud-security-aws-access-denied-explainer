@@ -33,8 +33,7 @@ This project is a cloud security detection and troubleshooting design for AWS Ac
 
 
 
-\## Architecture
-
+## Architecture
 
 
 ```text
