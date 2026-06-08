@@ -1,0 +1,17 @@
+{
+  "source": [
+    "aws.s3",
+    "aws.dynamodb",
+    "aws.secretsmanager"
+  ],
+  "detail-type": [
+    "AWS API Call via CloudTrail"
+  ],
+  "detail": {
+    "errorCode": [
+      "AccessDenied",
+      "AccessDeniedException",
+      "UnauthorizedOperation"
+    ]
+  }
+}

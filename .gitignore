@@ -1,0 +1,25 @@
+# Office temporary files
+~$*
+*.tmp
+
+# Drafts and archives
+drafts/
+old/
+archive/
+*.zip
+
+# AWS secrets and credentials
+.aws/
+credentials
+config
+*.pem
+*.key
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+# Large presentation files
+*.pptx
+*.ppt
+
