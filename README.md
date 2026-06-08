@@ -1,8 +1,8 @@
-\# Cloud Security AWS Access Denied Explainer
+\#Cloud Security AWS Access Denied Explainer
 
 
 
-\## Overview
+\##Overview
 
 
 
@@ -10,7 +10,7 @@ This project is a cloud security detection and troubleshooting design for AWS Ac
 
 
 
-\## Security Focus Areas
+\##Security Focus Areas
 
 
 
