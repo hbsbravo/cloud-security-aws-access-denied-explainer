@@ -40,6 +40,7 @@ This project is a cloud security detection and troubleshooting design for AWS Ac
 
 ````markdown
 ```text
+
 AWS API Call
    ↓
 CloudTrail Event
