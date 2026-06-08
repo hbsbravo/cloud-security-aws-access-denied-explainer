@@ -1,0 +1,19 @@
+AWS Access Denied Alert
+
+Service: Amazon S3
+Action: GetObject
+User: example-user
+Resource: example-secure-bucket/restricted-object.txt
+Error: AccessDenied
+
+Possible causes:
+- IAM policy does not allow s3:GetObject
+- Bucket policy denies the request
+- KMS key policy blocks decrypt access
+- Service Control Policy restricts the action
+
+Recommended checks:
+1. Review IAM identity policy.
+2. Review S3 bucket policy.
+3. Review KMS key policy.
+4. Review applicable Service Control Policies.

@@ -1,0 +1,14 @@
+{
+  "eventSource": "s3.amazonaws.com",
+  "eventName": "GetObject",
+  "errorCode": "AccessDenied",
+  "userIdentity": {
+    "type": "IAMUser",
+    "userName": "example-user"
+  },
+  "requestParameters": {
+    "bucketName": "example-secure-bucket",
+    "key": "restricted-object.txt"
+  },
+  "eventTime": "2024-12-07T18:30:00Z"
+}

@@ -1,0 +1,253 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AWS Access Denied Explainer - Cloud security detection architecture for
+  identifying and alerting on AWS Access Denied events using CloudTrail,
+  EventBridge, Lambda, SNS, DynamoDB, S3, and CloudWatch.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Email address to receive Access Denied alerts.
+
+Resources:
+  AccessDeniedLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "access-denied-explainer-logs-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AccessDeniedMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: AccessDeniedEvents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: EventId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: EventId
+          KeyType: HASH
+
+  AccessDeniedAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: AccessDeniedExplainerAlerts
+      DisplayName: AWS Access Denied Explainer Alerts
+
+  AccessDeniedAlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+      TopicArn: !Ref AccessDeniedAlertTopic
+
+  AccessDeniedLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AccessDeniedExplainerLambdaRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: AccessDeniedExplainerLambdaPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: WriteCloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+              - Sid: PublishSnsAlerts
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref AccessDeniedAlertTopic
+
+              - Sid: WriteDynamoDBMetadata
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt AccessDeniedMetadataTable.Arn
+
+              - Sid: ReadCloudTrailLogBucket
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt AccessDeniedLogBucket.Arn
+                  - !Sub "${AccessDeniedLogBucket.Arn}/*"
+
+  AccessDeniedProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AccessDeniedExplainerProcessor
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt AccessDeniedLambdaExecutionRole.Arn
+      Timeout: 30
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref AccessDeniedAlertTopic
+          DDB_TABLE_NAME: !Ref AccessDeniedMetadataTable
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          import uuid
+          from datetime import datetime
+
+          sns = boto3.client("sns")
+          dynamodb = boto3.resource("dynamodb")
+
+          SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
+          DDB_TABLE_NAME = os.environ["DDB_TABLE_NAME"]
+
+          def lambda_handler(event, context):
+              detail = event.get("detail", {})
+
+              event_id = str(uuid.uuid4())
+              event_time = detail.get("eventTime", datetime.utcnow().isoformat())
+              event_source = detail.get("eventSource", "unknown")
+              event_name = detail.get("eventName", "unknown")
+              error_code = detail.get("errorCode", "unknown")
+              error_message = detail.get("errorMessage", "No error message provided")
+
+              user_identity = detail.get("userIdentity", {})
+              principal = (
+                  user_identity.get("arn")
+                  or user_identity.get("userName")
+                  or user_identity.get("principalId")
+                  or "unknown"
+              )
+
+              possible_causes = [
+                  "IAM identity policy does not allow the requested action.",
+                  "A resource policy may explicitly deny the request.",
+                  "A Service Control Policy may restrict the action.",
+                  "A KMS key policy may block decrypt or encrypt access.",
+                  "The request may target the wrong AWS account or region."
+              ]
+
+              table = dynamodb.Table(DDB_TABLE_NAME)
+              table.put_item(
+                  Item={
+                      "EventId": event_id,
+                      "EventTime": event_time,
+                      "EventSource": event_source,
+                      "EventName": event_name,
+                      "ErrorCode": error_code,
+                      "Principal": principal,
+                      "ErrorMessage": error_message
+                  }
+              )
+
+              message = f"""
+          AWS Access Denied Alert
+
+          Service: {event_source}
+          Action: {event_name}
+          Principal: {principal}
+          Error Code: {error_code}
+          Error Message: {error_message}
+          Event Time: {event_time}
+
+          Possible Causes:
+          - {possible_causes[0]}
+          - {possible_causes[1]}
+          - {possible_causes[2]}
+          - {possible_causes[3]}
+          - {possible_causes[4]}
+
+          Recommended Checks:
+          1. Review IAM identity policies.
+          2. Review resource-based policies.
+          3. Review applicable Service Control Policies.
+          4. Review KMS key policies if encryption is involved.
+          5. Confirm account and region context.
+          """
+
+              sns.publish(
+                  TopicArn=SNS_TOPIC_ARN,
+                  Subject="AWS Access Denied Alert",
+                  Message=message
+              )
+
+              return {
+                  "statusCode": 200,
+                  "body": json.dumps({
+                      "message": "Access Denied event processed",
+                      "eventId": event_id
+                  })
+              }
+
+  AccessDeniedProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AccessDeniedProcessorFunction}"
+      RetentionInDays: 30
+
+  AccessDeniedEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: AccessDeniedExplainerRule
+      Description: Detects AWS API Access Denied events from CloudTrail.
+      EventPattern:
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          errorCode:
+            - AccessDenied
+            - AccessDeniedException
+            - UnauthorizedOperation
+            - Client.UnauthorizedOperation
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AccessDeniedProcessorFunction.Arn
+          Id: AccessDeniedProcessorLambdaTarget
+
+  PermissionForEventBridgeToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AccessDeniedProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AccessDeniedEventRule.Arn
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS topic used for Access Denied alerts.
+    Value: !Ref AccessDeniedAlertTopic
+
+  MetadataTableName:
+    Description: DynamoDB table storing Access Denied event metadata.
+    Value: !Ref AccessDeniedMetadataTable
+
+  LogBucketName:
+    Description: S3 bucket reserved for Access Denied log storage.
+    Value: !Ref AccessDeniedLogBucket
+
+  EventBridgeRuleName:
+    Description: EventBridge rule detecting Access Denied events.
+    Value: !Ref AccessDeniedEventRule
+
+  LambdaFunctionName:
+    Description: Lambda function processing Access Denied events.
+    Value: !Ref AccessDeniedProcessorFunction
